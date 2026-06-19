@@ -14,6 +14,8 @@ import (
 
 const AddressType = "sealed-anchor-v1"
 
+const sealedPayloadVersion byte = 0
+
 var magic = []byte("BF01")
 
 type Engine struct {
@@ -77,7 +79,7 @@ func (e Engine) Locate(text []byte, placement string) (LocateResult, error) {
 	}
 	var b bytes.Buffer
 	b.Write(magic)
-	b.WriteByte(0)
+	b.WriteByte(sealedPayloadVersion)
 	b.WriteByte(1)
 	b.WriteByte(1)
 	b.WriteByte(pm)
@@ -109,6 +111,9 @@ func (e Engine) Decode(blob []byte) (Decoded, error) {
 	}
 	if len(pt) < 50 || string(pt[:4]) != "BF01" {
 		return Decoded{}, fmt.Errorf("invalid_address")
+	}
+	if pt[4] != sealedPayloadVersion {
+		return Decoded{}, fmt.Errorf("unsupported_payload_version")
 	}
 	if pt[5] != 1 {
 		return Decoded{}, fmt.Errorf("unsupported_alphabet")

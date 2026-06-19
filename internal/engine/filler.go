@@ -6,6 +6,10 @@ import (
 	"github.com/cj3636/gobabel/internal/alphabet"
 )
 
+// Generate expands seed material into deterministic filler bytes for v1 pages.
+// v1 uses SHA-256 counter expansion (label || seed || uint64 counter) and
+// rejection sampling to map digest bytes uniformly onto the 98-character
+// alphabet; it does not use ChaCha20 for stream generation.
 func Generate(seed []byte, label string, a alphabet.Alphabet, n int) ([]byte, error) {
 	out := make([]byte, 0, n)
 	var ctr uint64
