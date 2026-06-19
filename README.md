@@ -36,7 +36,7 @@ curl -s localhost:3000/v1/corpus/hex/zk4n2/wall/3/shelf/1/book/k9Lm2/page/412
 
 ## Address format
 
-Sealed anchor addresses use `/v1/book/bf1/{base64url-segments}` and optional exclusive byte range suffix `{start}:{end}`. The encrypted payload contains flags, alphabet and codec IDs, page size, placement, start, text length, filler seed, and packed text. Corpus addresses use visible coordinates and SHA-256/ChaCha20 deterministic generation.
+Sealed anchor addresses use `/v1/book/bf1/{base64url-segments}` and optional exclusive byte range suffix `{start}:{end}`. The encrypted payload contains a payload version, alphabet and codec IDs, page size, placement, start, text length, filler seed, and packed text. Sealed anchor addresses are versioned with the `bf1` path segment and use AES-256-GCM for authenticated encryption; the address version is also bound into the AEAD associated data so future crypto changes can use a new address version without breaking existing addresses. Corpus addresses use visible coordinates and SHA-256 counter expansion for deterministic page generation.
 
 ## Public vs private sealing
 
