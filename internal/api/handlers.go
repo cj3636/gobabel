@@ -54,38 +54,29 @@ func (h Handler) Locate(w http.ResponseWriter, r *http.Request) {
 	jsonw(w, res)
 }
 func (h Handler) Book(w http.ResponseWriter, r *http.Request) {
-	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/v1/book/"), "/")
-	if len(parts) < 2 || parts[0] != address.Version {
-		writeErr(w, 400, "unsupported_version", "Unsupported book version.", nil)
-		return
-	}
-	if s, e, ok, err := address.ParseRange(parts[len(parts)-1]); ok {
-		if err != nil {
-			writeErr(w, 400, "invalid_range", "Invalid range.", nil)
-			return
-		}
-		parts = parts[:len(parts)-1]
-		blob, err := address.DecodeSegments(parts[1:])
-		if err != nil {
-			writeErr(w, 400, "invalid_address", "Invalid address.", nil)
-			return
-		}
-		page, _, err := h.Engine.Page(blob)
-		if err != nil {
-			writeErr(w, 400, err.Error(), "Could not open address.", nil)
-			return
-		}
-		jsonw(w, map[string]any{"address_type": engine.AddressType, "start": s, "end": e, "text": string(page[s:e])})
-		return
-	}
-	blob, err := address.DecodeSegments(parts[1:])
+	segs, rg, err := address.SplitBookPath(r.URL.Path)
 	if err != nil {
-		writeErr(w, 400, "invalid_address", "Invalid address.", nil)
+		code := err.Error()
+		status := 400
+		if code == "unsupported_version" {
+			writeErr(w, status, code, "Unsupported book version.", nil)
+			return
+		}
+		writeErr(w, status, code, "Invalid address.", nil)
+		return
+	}
+	blob, err := address.DecodeSegments(segs)
+	if err != nil {
+		writeErr(w, 400, err.Error(), "Invalid address.", nil)
 		return
 	}
 	page, _, err := h.Engine.Page(blob)
 	if err != nil {
 		writeErr(w, 400, err.Error(), "Could not open address.", nil)
+		return
+	}
+	if rg != nil {
+		jsonw(w, map[string]any{"address_type": engine.AddressType, "start": rg[0], "end": rg[1], "text": string(page[rg[0]:rg[1]])})
 		return
 	}
 	jsonw(w, map[string]any{"address_type": engine.AddressType, "text": string(page), "page_size": engine.PageSize, "alphabet": alphabet.CodeASCIIV1ID, "codec": codec.ID})
@@ -96,11 +87,11 @@ func (h Handler) Corpus(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 404, "invalid_address", "Invalid corpus path.", nil)
 		return
 	}
-	c := corpus.Coordinate{Hexagon: p[0], Wall: p[2], Shelf: p[4], Book: p[6], Page: p[7]}
-	if p[1] != "wall" || p[3] != "shelf" || p[5] != "book" {
+	if p[0] == "" || p[2] == "" || p[4] == "" || p[6] == "" || p[7] == "" || strings.Contains(p[7], ":") || p[1] != "wall" || p[3] != "shelf" || p[5] != "book" {
 		writeErr(w, 404, "invalid_address", "Invalid corpus path.", nil)
 		return
 	}
+	c := corpus.Coordinate{Hexagon: p[0], Wall: p[2], Shelf: p[4], Book: p[6], Page: p[7]}
 	page, err := corpus.Page(c, h.Engine.Alphabet)
 	if err != nil {
 		writeErr(w, 500, "internal_error", "Internal error.", nil)
