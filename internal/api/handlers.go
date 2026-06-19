@@ -73,10 +73,9 @@ func (h Handler) Book(w http.ResponseWriter, r *http.Request) {
 			writeAPIError(w, 400, err, "invalid_address", "Could not open address.")
 			return
 		}
-		jsonw(w, map[string]any{"address_type": engine.AddressType, "start": s, "end": e, "text": string(page[s:e])})
 		return
 	}
-	blob, err := address.DecodeSegments(parts[1:])
+	blob, err := address.DecodeSegments(segs)
 	if err != nil {
 		writeErr(w, 400, engine.ErrInvalidAddress.Error(), "Invalid address.", nil)
 		return
