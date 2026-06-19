@@ -5,7 +5,9 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/binary"
+	"errors"
 	"fmt"
+
 	"github.com/cj3636/gobabel/internal/address"
 	"github.com/cj3636/gobabel/internal/alphabet"
 	"github.com/cj3636/gobabel/internal/codec"
@@ -14,7 +16,40 @@ import (
 
 const AddressType = "sealed-anchor-v1"
 
+const sealedPayloadVersion byte = 0
+
 var magic = []byte("BF01")
+
+var (
+	ErrInvalidJSON         = errors.New("invalid_json")
+	ErrInvalidCharacter    = errors.New("invalid_character")
+	ErrTextTooLong         = errors.New("text_too_long")
+	ErrEmptyText           = errors.New("empty_text")
+	ErrInvalidRange        = errors.New("invalid_range")
+	ErrInvalidAddress      = errors.New("invalid_address")
+	ErrUnsupportedVersion  = errors.New("unsupported_version")
+	ErrUnsupportedAlphabet = errors.New("unsupported_alphabet")
+	ErrUnsupportedCodec    = errors.New("unsupported_codec")
+	ErrCryptoOpenFailed    = errors.New("crypto_open_failed")
+)
+
+type InvalidCharacterError struct {
+	Invalid []alphabet.InvalidByte
+}
+
+func (e InvalidCharacterError) Error() string     { return ErrInvalidCharacter.Error() }
+func (e InvalidCharacterError) Unwrap() error     { return ErrInvalidCharacter }
+func (e InvalidCharacterError) ErrorCode() string { return ErrInvalidCharacter.Error() }
+func (e InvalidCharacterError) ErrorDetails() any {
+	if len(e.Invalid) == 0 {
+		return nil
+	}
+	return map[string]any{
+		"position": e.Invalid[0].Position,
+		"byte":     e.Invalid[0].Byte,
+		"invalid":  e.Invalid,
+	}
+}
 
 type Engine struct {
 	Alphabet alphabet.Alphabet
@@ -41,13 +76,13 @@ func (e Engine) Locate(text []byte, placement string) (LocateResult, error) {
 		placement = "hash"
 	}
 	if len(text) == 0 {
-		return LocateResult{}, fmt.Errorf("empty_text")
+		return LocateResult{}, ErrEmptyText
 	}
 	if len(text) > PageSize {
-		return LocateResult{}, fmt.Errorf("text_too_long")
+		return LocateResult{}, ErrTextTooLong
 	}
 	if inv := e.Alphabet.ValidateBytes(text); len(inv) > 0 {
-		return LocateResult{}, fmt.Errorf("invalid_character:%d", inv[0].Position)
+		return LocateResult{}, InvalidCharacterError{Invalid: inv}
 	}
 	seed := make([]byte, 32)
 	rand.Read(seed)
@@ -77,7 +112,7 @@ func (e Engine) Locate(text []byte, placement string) (LocateResult, error) {
 	}
 	var b bytes.Buffer
 	b.Write(magic)
-	b.WriteByte(0)
+	b.WriteByte(sealedPayloadVersion)
 	b.WriteByte(1)
 	b.WriteByte(1)
 	b.WriteByte(pm)
@@ -105,27 +140,30 @@ type Decoded struct {
 func (e Engine) Decode(blob []byte) (Decoded, error) {
 	pt, err := e.Sealer.Open(blob, AAD())
 	if err != nil {
-		return Decoded{}, fmt.Errorf("crypto_open_failed")
+		return Decoded{}, ErrCryptoOpenFailed
 	}
 	if len(pt) < 50 || string(pt[:4]) != "BF01" {
-		return Decoded{}, fmt.Errorf("invalid_address")
+		return Decoded{}, ErrInvalidAddress
+	}
+	if pt[4] != sealedPayloadVersion {
+		return Decoded{}, fmt.Errorf("unsupported_payload_version")
 	}
 	if pt[5] != 1 {
-		return Decoded{}, fmt.Errorf("unsupported_alphabet")
+		return Decoded{}, ErrUnsupportedAlphabet
 	}
 	if pt[6] != 1 {
-		return Decoded{}, fmt.Errorf("unsupported_codec")
+		return Decoded{}, ErrUnsupportedCodec
 	}
 	ps := binary.BigEndian.Uint16(pt[8:10])
 	if ps != PageSize {
-		return Decoded{}, fmt.Errorf("invalid_address")
+		return Decoded{}, ErrInvalidAddress
 	}
 	start := int(binary.BigEndian.Uint16(pt[10:12]))
 	l := int(binary.BigEndian.Uint16(pt[12:14]))
 	seed := append([]byte(nil), pt[14:46]...)
 	plen := int(binary.BigEndian.Uint32(pt[46:50]))
 	if 50+plen != len(pt) || start+l > PageSize {
-		return Decoded{}, fmt.Errorf("invalid_address")
+		return Decoded{}, ErrInvalidAddress
 	}
 	txt, err := codec.Unpack(pt[50:], l, e.Alphabet)
 	if err != nil {
